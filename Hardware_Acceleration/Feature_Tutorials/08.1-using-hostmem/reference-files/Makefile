@@ -1,8 +1,11 @@
 VPP := v++
 EMCONFIGUTIL := emconfigutil
+# TARGET can be sw_emu, hw_emu or hw
 TARGET := hw
-LAB := run1
-DEVICE := xilinx_u250_gen3x16_xdma_3_1_202020_1
+LAB := run2
+#DEVICE := xilinx_u50_gen3x16_xdma_201920_3
+DEVICE := xilinx_u50_gen3x16_xdma_5_202210_1
+#DEVICE := xilinx_u250_gen3x16_xdma_3_1_202020_1
 
 KRNL_SRC := ./src/kernel.cpp
 
