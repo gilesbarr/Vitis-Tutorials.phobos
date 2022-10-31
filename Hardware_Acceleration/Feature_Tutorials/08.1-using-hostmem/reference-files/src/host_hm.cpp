@@ -40,8 +40,7 @@ std::vector<std::string> kernel_names_ {"vadd:{vadd_1}",
                                          "vadd:{vadd_11}",
                                          "vadd:{vadd_12}",
                                          "vadd:{vadd_13}",
-                                         "vadd:{vadd_14}",
-                                         "vadd:{vadd_15}" } ;
+                                         "vadd:{vadd_14}" } ;
 
 static void
 throw_if_error(cl_int errcode, const char* msg=nullptr)
@@ -203,25 +202,35 @@ kernel_done(cl_event event, cl_int status, void* data)
 int
 run_test(cl_context context, cl_command_queue queue, cl_program program, const int nelements)
 {
-  int ncu = 15;
+  int ncu = 14;
   std::vector<job_type> jobs;
+  std::cout << "GDB-1";
+
   jobs.reserve(ncu);
   for (size_t j=0; j<ncu; ++j)
     jobs.emplace_back(context,queue,program,kernel_names_[j],nelements);
+  std::cout << "GDB-2";
 
   stop = false; 
   std::for_each(jobs.begin(),jobs.end(),[](job_type& j){j.run();});
+  std::cout << "GDB-3";
 
   std::this_thread::sleep_for(std::chrono::seconds(20));
   stop=true;
+  std::cout << "GDB-4";
+
 
   clFinish(queue);
+  std::cout << "GDB-5";
+
 
   auto total_kernel_execution =0;
   for (size_t j=0; j<ncu; ++j) {
     std::cout << "kernel[" << j << "]:" << jobs[j].runs << "\n";
     total_kernel_execution+=jobs[j].runs;
   }
+  std::cout << "GDB-6";
+
 
    std::cout<<"Total Kernel execution in 20 seconds:"<<total_kernel_execution<<"\n";
    std::cout<<"\n Data processed in 20 seconds: 4MB*total_kernel_executions:"<<total_kernel_execution*4<<" MB \n";
@@ -229,6 +238,7 @@ run_test(cl_context context, cl_command_queue queue, cl_program program, const i
    double total_data_mb_sec = (double)(total_data_mb/20); 
    double total_data_gb_sec = (double)(total_data_mb_sec/1000); 
    std::cout<<"\n Data processed/sec (GBPs)= "<<total_data_gb_sec<<" GBPs \n";
+   std::cout << "GDB-7";
 
 
   return 0;
@@ -241,21 +251,37 @@ run(int argc, char** argv)
     throw std::runtime_error("usage: host.exe <xclbin>");
 
   cl_int err = CL_SUCCESS;
+  std::cout << "GDB 1";
   cl_platform_id platform = nullptr;
   throw_if_error(clGetPlatformIDs(1,&platform,nullptr));
+  std::cout << "GDB 2";
+
 
   cl_uint num_devices = 0;
   throw_if_error(clGetDeviceIDs(platform,CL_DEVICE_TYPE_ACCELERATOR,0,nullptr,&num_devices));
+  std::cout << "GDB 3";
+
   throw_if_error(num_devices==0,"no devices");
+  std::cout << "GDB 4";
+
   std::vector<cl_device_id> devices(num_devices);
+  std::cout << "GDB 5";
+
   throw_if_error(clGetDeviceIDs(platform,CL_DEVICE_TYPE_ACCELERATOR,num_devices,devices.data(),nullptr));
+  std::cout << "GDB 6";
+
   cl_device_id device = devices.front();
 
   cl_context context = clCreateContext(0,1,&device,nullptr,nullptr,&err);
+  std::cout << "GDB 7";
+
   throw_if_error(err);
 
   cl_command_queue queue = clCreateCommandQueue(context,device,CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE,&err);
+  std::cout << "GDB 8";
   throw_if_error(err,"failed to create command queue");
+  std::cout << "GDB 9";
+
 
   std::string fnm = argv[1];
   std::ifstream stream(fnm);
@@ -267,6 +293,8 @@ run(int argc, char** argv)
   const unsigned char* data = reinterpret_cast<unsigned char*>(xclbin.data());
   cl_int status = CL_SUCCESS;
   cl_program program = clCreateProgramWithBinary(context,1,&device,&size,&data,&status,&err);
+  std::cout << "GDB A";
+
   throw_if_error(err,"failed to create program");
 
   
@@ -274,15 +302,23 @@ run(int argc, char** argv)
 
   double dmbytes = (number_of_elements*sizeof(int))/(((double)1024) * ((double)1024));
   std::cout<<"\n Buffer Inputs "<<dmbytes<<" MB \n";
+  std::cout << "GDB B";
 
   
   run_test(context,queue,program,number_of_elements);
+  std::cout << "GDB C";
 
   clReleaseProgram(program);
   clReleaseCommandQueue(queue);
+  std::cout << "GDB D";
+
   clReleaseContext(context);
   clReleaseDevice(device);
+  std::cout << "GDB E";
+
   std::for_each(devices.begin(),devices.end(),[](cl_device_id d){clReleaseDevice(d);});
+  std::cout << "GDB F";
+
 
   return 0;
 }
