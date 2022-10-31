@@ -40,8 +40,7 @@ std::vector<std::string> kernel_names_ {"vadd:{vadd_1}",
                                          "vadd:{vadd_11}",
                                          "vadd:{vadd_12}",
                                          "vadd:{vadd_13}",
-                                         "vadd:{vadd_14}",
-                                         "vadd:{vadd_15}" } ;
+                                         "vadd:{vadd_14}" } ;
 
 static void
 throw_if_error(cl_int errcode, const char* msg=nullptr)
@@ -203,7 +202,7 @@ kernel_done(cl_event event, cl_int status, void* data)
 int
 run_test(cl_context context, cl_command_queue queue, cl_program program, const int nelements)
 {
-  int ncu = 15;
+  int ncu = 14;
   std::vector<job_type> jobs;
   jobs.reserve(ncu);
   for (size_t j=0; j<ncu; ++j)

@@ -117,6 +117,13 @@ The bottom half of the v++ link file ``./src/link_hm.cfg`` for host memory conne
    sp=vadd_14.m_axi_gmem:HOST[0]
    sp=vadd_15.m_axi_gmem:HOST[0]
 
+[Giles] To setup the enviromnent to use vitis etc., do this (our vitis 2022.1 is in an unusual place to save diskspace):
+
+.. code::
+
+    source /media/disk1/tools/Xilinx/Vitis/2022.1/settings64.sh
+    source /opt/xilinx/xrt/setup.sh
+    export PLATFORM_REPO_PATHS=/opt/xilinx/platforms
 
 The Makefile is using ``./src/link.cfg`` file by default. To build the DDR connected kernel XCLBIN simply do
 
@@ -236,7 +243,8 @@ Before running the host memory-based application ensure that you have preconfigu
 
 .. code:: 
    
-     sudo /opt/xilinx/xrt/bin/xbutil host_mem --enable --size 1G
+     [before fix by Giles] sudo /opt/xilinx/xrt/bin/xbutil host_mem --enable --size 1G
+     sudo /opt/xilinx/xrt/bin/xbutil configure --device 0000:4d:00.1 --host-mem enable --size 1G
      
 Compile and run the host code
 

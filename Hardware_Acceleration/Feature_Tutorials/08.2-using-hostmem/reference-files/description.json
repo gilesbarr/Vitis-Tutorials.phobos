@@ -3,7 +3,7 @@
     "description": "08-using-hostmem",
     "flow": "vitis",
  
-    "platform_allowlist": ["u250"],
+    "platform_allowlist": ["u50"],
  
     "testinfo": {
         "test_name": "HW_F_08-using-hostmem",
