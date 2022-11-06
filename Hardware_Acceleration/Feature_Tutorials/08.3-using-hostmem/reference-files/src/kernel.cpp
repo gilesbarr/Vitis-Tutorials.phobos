@@ -58,10 +58,11 @@ void vadd(const uint512_dt *sgin,
       }
 
       for (int jsg = 0; jsg < SGBUFFER_SIZE; jsg++) {    // Step through the list of 512b multi-group descriptors
-        uint512_dt tmpSGV = sg_local[jsg];
+          uint512_dt tmpSGV = sg_local[jsg];
 
           for (int ksg = 0; ksg < SGVECTOR_SIZE; ksg++) {
               sgin_type jumbo = tmpSGV.range(SGDESC_SIZE * (ksg + 1) - 1, ksg * SGDESC_SIZE)
+              din_type val3 = ((isg + jsg) * SGDESC_SIZE + ksg) & (DATATYPE_SIZE - 1);
 
               // Read the data from the jumbo frame
               v1_rd: for (int j = 0; j < BUFFER_SIZE; j++) {
@@ -71,16 +72,15 @@ void vadd(const uint512_dt *sgin,
               // Process the data from the jumbo rame
               v2_rd_add: for (int j = 0; j < BUFFER_SIZE; j++) {
                   uint512_dt tmpV1 = v1_local[j];
-                  uint512_dt tmpV2 = v1_local[j];      // was in2['jumbo' + j];
                   uint512_dt tmpOut = 0;
-                  din_type val1, val2;
+                  din_type val1;
+                  din_type val2 = val3 ^ j;    // This is the XOR operator
                   dout_type res;
 
                   v2_parallel_add: for (int i = 0; i < VECTOR_SIZE; i++) {
                       #pragma HLS UNROLL
                       val1 = tmpV1.range(DATATYPE_SIZE * (i + 1) - 1, i * DATATYPE_SIZE);
-                      val2 = tmpV2.range(DATATYPE_SIZE * (i + 1) - 1, i * DATATYPE_SIZE);
-                      res = val1 + val2; 
+                      res = val1 | val2;       // This is the OR operator
                       tmpOut.range(DATATYPE_SIZE * (i + 1) - 1, i * DATATYPE_SIZE) = res; 
                   }  // end of v2_parallel_add
                   result_local[j] = tmpOut;
