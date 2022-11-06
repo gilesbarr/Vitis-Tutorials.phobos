@@ -22,9 +22,13 @@
 #define DATATYPE_SIZE 32
 #define VECTOR_SIZE (DATAWIDTH / DATATYPE_SIZE)
 
+// This version reads the descriptors 64 bits at a time, so does not optimise the 512bit transfers explicitly (but has less looping)
+// However it may be problematic that we have 64-bit and 512bit reads from the same axi bundle 'gmem'
+
 #define SGDESC_SIZE 64 
-#define SGBUFFER_SIZE 128 
-#define SGVECTOR_SIZE (DATAWIDTH / SGDESC_SIZE)
+typedef ap_uint<SGDESC_SIZE> uint64_dt;
+#define SGBUFFER_SIZE 1024 
+#define SGVECTOR_SIZE 1
 
 typedef ap_uint<DATAWIDTH> uint512_dt;
 typedef ap_uint<DATATYPE_SIZE> din_type;
@@ -32,7 +36,7 @@ typedef ap_uint<DATATYPE_SIZE + 1> dout_type;
 typedef ap_uint<SGDESC_SIZE> sgin_type;
 
 extern "C" {
-void vadd(const uint512_dt *sgin, 
+void vadd(const sgin_type *sgin, 
           const uint512_dt *in1, 
           uint512_dt *out,       
           int size              
@@ -41,10 +45,10 @@ void vadd(const uint512_dt *sgin,
 #pragma HLS INTERFACE m_axi port=in1  bundle=gmem num_write_outstanding=32 max_write_burst_length=64  num_read_outstanding=32 max_read_burst_length=64  offset=slave
 #pragma HLS INTERFACE m_axi port=out  bundle=gmem num_write_outstanding=32 max_write_burst_length=64  num_read_outstanding=32 max_read_burst_length=64  offset=slave
 
-// sgin is a scatter-gather table. 
+// sgin is the scatter-gather table. 
 
-  uint512_dt sg_local[SGBUFFER_SIZE];
-  int sgsize_in16 = size / SGVECTOR_SIZE;     // size is the total number of jumbo frames, sgsize_16 is the number of 512b words to read
+  sgin_type sg_local[SGBUFFER_SIZE];
+  int sgsize_in16 = size;     // size is the total number of jumbo frames, sgsize_16 is the number of words to read (same in this case)
 
   uint512_dt v1_local[BUFFER_SIZE];    
   uint512_dt result_local[BUFFER_SIZE]; 
@@ -58,10 +62,7 @@ void vadd(const uint512_dt *sgin,
       }
 
       for (int jsg = 0; jsg < SGBUFFER_SIZE; jsg++) {    // Step through the list of 512b multi-group descriptors
-        uint512_dt tmpSGV = sg_local[jsg];
-
-          for (int ksg = 0; ksg < SGVECTOR_SIZE; ksg++) {
-              sgin_type jumbo = tmpSGV.range(SGDESC_SIZE * (ksg + 1) - 1, ksg * SGDESC_SIZE)
+        sgin_type jumbo = sg_local[jsg];
 
               // Read the data from the jumbo frame
               v1_rd: for (int j = 0; j < BUFFER_SIZE; j++) {
@@ -89,7 +90,6 @@ void vadd(const uint512_dt *sgin,
               out_write: for (int j = 0; j < BUFFER_SIZE; j++) {
                   out[i + j] = result_local[j];
               }  // end of out_write
-          }  // End of for(ksg) loop over jumbo frames in 512-vector
       }  // end of for(jsg) loop over jumbo frame 512-vectors in group
    }  // End of sg_group loop of jumbo frames
 } // End of function
