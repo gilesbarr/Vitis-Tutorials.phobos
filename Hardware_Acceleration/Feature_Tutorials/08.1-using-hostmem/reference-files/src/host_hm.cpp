@@ -297,7 +297,7 @@ run(int argc, char** argv)
 
   throw_if_error(err,"failed to create program");
 
-  
+//  int number_of_elements = 1024*128;   // Giles tried this, it gives the same rate as usual (next line), but printout is x4 the rate because of the hard-coded 4MB  
   int number_of_elements = 1024*512;
 
   double dmbytes = (number_of_elements*sizeof(int))/(((double)1024) * ((double)1024));
