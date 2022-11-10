@@ -31,6 +31,41 @@ typedef ap_uint<DATATYPE_SIZE> din_type;
 typedef ap_uint<DATATYPE_SIZE + 1> dout_type;
 typedef ap_uint<SGDESC_SIZE> sgin_type;
 
+//-------------------------------------------------------------------------------
+//---
+//---  This version of the trial is intended to simulate an accelertator card
+//---  processing incoming jumbo frames that have had ordering error-correction
+//---  and outputting trigger primitives.  
+//---
+//---  In this 08.3 version of the trial, the *sgin vector is read as 512-bit PCIe
+//---  transactions and then split into 8 64-bit objects.  In the other 08.4 trial,
+//---  the transactions are 64-bit wide and read one object at a time.  The host
+//---  code for both trials should be the same.
+//--- 
+//---  Parameters:
+//---    *sgin   read   A vector of offsets indicating where data is located 
+//---                    within *in1 and *out on the host for scatter-gather.  
+//---                    The first offset is the offset within *out, the rest
+//---                    are a list of jumbo packet locations within *in whose
+//---                    length is indicated by the size parameter.
+//--- 
+//---    *in     read   An array containing the jumbo packets.  The offsets of
+//---                    the jumbo packets are given in the list in *sgin.  This
+//---                    array is intended to map to the whole of the DPDK membuff
+//---                    area on the host.                    
+//---
+//---    *out    write  An area for the trigger primitive output to be placed for
+//---                    all the packets processed from the kernel invocation.
+//---                    Normally the size of the trigger primitive data is far
+//---                    smaller than the input data, so we put it all in one
+//---                    block and the host can re-sort it if necessary.  The 
+//---                    start of the block being written to is given in the first
+//---                    value in *sgin
+//---
+//---    size    read    The number of input jumbo packets.
+//---
+//--------------------------------------------------------------------------------
+
 extern "C" {
 void vadd(const uint512_dt *sgin, 
           const uint512_dt *in1, 
