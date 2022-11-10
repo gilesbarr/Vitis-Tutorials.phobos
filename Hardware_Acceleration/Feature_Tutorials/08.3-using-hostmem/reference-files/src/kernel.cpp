@@ -96,7 +96,7 @@ void vadd(const uint512_dt *sgin,
           uint512_dt tmpSGV = sg_local[jsg];
 
           for (int ksg = 0; ksg < SGVECTOR_SIZE; ksg++) {
-              sgin_type jumbo = tmpSGV.range(SGDESC_SIZE * (ksg + 1) - 1, ksg * SGDESC_SIZE)
+              sgin_type jumbo = tmpSGV.range(SGDESC_SIZE * (ksg + 1) - 1, ksg * SGDESC_SIZE);
               din_type val3 = ((isg + jsg) * SGDESC_SIZE + ksg) & (DATATYPE_SIZE - 1);
 
               // Read the data from the jumbo frame
@@ -122,7 +122,7 @@ void vadd(const uint512_dt *sgin,
               }  // end of v2_rd_add
 
               out_write: for (int j = 0; j < BUFFER_SIZE; j++) {
-                  out[i + j] = result_local[j];
+                  out[ksg + j] = result_local[j];
               }  // end of out_write
           }  // End of for(ksg) loop over jumbo frames in 512-vector
       }  // end of for(jsg) loop over jumbo frame 512-vectors in group

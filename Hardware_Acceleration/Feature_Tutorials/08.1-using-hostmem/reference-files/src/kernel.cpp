@@ -17,6 +17,8 @@
 #include <ap_int.h>
 
 #define BUFFER_SIZE 128
+// #define DATAWIDTH 128  
+// Giles try 2.11.2022 (I think it will slow down, let's see)
 #define DATAWIDTH 512
 #define DATATYPE_SIZE 32
 #define VECTOR_SIZE (DATAWIDTH / DATATYPE_SIZE) 

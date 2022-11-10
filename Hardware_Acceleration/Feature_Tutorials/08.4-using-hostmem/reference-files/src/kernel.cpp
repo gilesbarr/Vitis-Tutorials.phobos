@@ -123,7 +123,7 @@ void vadd(const sgin_type *sgin,
               }  // end of v2_rd_add
 
               out_write: for (int j = 0; j < BUFFER_SIZE; j++) {
-                  out[i + j] = result_local[j];
+                  out[jsg + j] = result_local[j];
               }  // end of out_write
       }  // end of for(jsg) loop over jumbo frame 512-vectors in group
    }  // End of sg_group loop of jumbo frames
