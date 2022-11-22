@@ -1,0 +1,12 @@
+*.log
+*.xclbin*
+*.compile_summary
+xrt.run_summary
+.ipcache
+_x
+*.exe
+*.csv
+*.so
+*.xo
+*.ltx
+
