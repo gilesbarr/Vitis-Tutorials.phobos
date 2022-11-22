@@ -21,7 +21,9 @@ Software and firmware source code is organised under this directory in the git r
 
 ## Making the xclbin files
 
-Will add bespoke instructions here.  Starting from the VITIS/xrta and VITIS/xrtn directories in this distribution, follow the instructions in github.com/Xilinx/Vitis-Tutorials/Hardware-acceleration/Features/08-xxxxx to install Vitis, XRT and the U50 platform files and then type 'make' in each of these directories.  The vitis install installs a very large amount of software, and if you already have vivado/vitis installed, there may be a trick to use that.  make will take about 2 hours for each of xrta and xrtn.  It may be that the xclbin files I have made can be copied across to your machine to avoid all of this.
+Will add bespoke instructions here.  Starting from the VITIS/xrta and VITIS/xrtn directories in this distribution, you basically enter lines 1405, 1406 and 1407 from the history dump at the bottom of this page to set the vitis environment up, and then type 'make' in the reference_files directory of each of xrta and xrtn.  xrta is working, but xrtn needs testing still.  
+
+More details: follow the instructions in github.com/Xilinx/Vitis-Tutorials/Hardware-acceleration/Features/08-xxxxx to install Vitis, XRT and the U50 platform files and then follow the example.  The structure of xrta and xrtn are the same as this, although it only does 'lab2'.  It may be that the xclbin files I have made can be copied across to your machine to avoid all of this.
 
 Note that when you install the XRT libraries, when the machine boots, Linux will now bind the U50 to the XRT driver (which is a kernel driver).  If you are running with xdma some of the time, you may need to swap between these two drivers somehow.
 
@@ -37,4 +39,14 @@ TODO: Give examples of how to run it.  parameters and EAL
 
 TODO: Give examples of the performance.
 
+## Some lines to edit into the instructions later 
+
+1405  source /media/disk1/tools/Xilinx/Vitis/2022.1/settings64.sh
+1406  source /opt/xilinx/xrt/setup.sh
+1407  export PLATFORM_REPO_PATHS=/opt/xilinx/platforms
+
+
+1408  ./host.exe vadd.hw.run2.xclbin
+Would be nice on the next line to type make host_hm.exe I will try to fix it
+1410  make host.exe lab=run2
 
