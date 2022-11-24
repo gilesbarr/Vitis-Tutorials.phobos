@@ -27,6 +27,8 @@
 #include <numeric>
 #include <cstring>
 
+#include "kernelhost.h"
+
 std::vector<std::string> kernel_names_ {"vadd:{vadd_1}", 
                                          "vadd:{vadd_2}",
                                          "vadd:{vadd_3}",
@@ -70,25 +72,42 @@ struct job_type
   std::string kernel_name;
 
   cl_kernel krnl;
-  cl_mem in1;
-  cl_mem in2;
-  cl_mem io;
- 
-  int* in1_mapped;
-  int* in2_mapped;
-  int* io_mapped;
+  cl_mem sginoutt;
+  cl_mem sgoutd;
+  cl_mem in;
+  cl_mem outd;
+  cl_mem outt;
+  
+  int* sginoutt_mapped;
+  int* sgoutd_mapped;
+  int* in_mapped;
+  int* outd_mapped;
+  int* outt_mapped;
+
+// The values for bytes_sgoutd and bytes_outd assume size (the last parameter) is 16
+  const size_t bytes_sginoutt = 64;                           // 512bits/8bits
+  const size_t bytes_sgoutd   = 16*SGDATAWIDTH*SGREADCLUMP/8*16; // 512b*16/8b = 1024 bytes (256 descriptors). 8ms = 16 of these
+  const size_t bytes_in       = DATAWIDTH*IN_SIZE/8;             // 512b*16/8b = 1024 bytes
+  const size_t bytes_outd     = 8192;   // try for now *256*16*16; All descriptors=0 so OK for now  // Jumbosize*descrPerClump* 256MB
+  const size_t bytes_outt     = 8192;                         // A bit bigger than JUMBO_SIZE 128*512/8=8192
 
   const size_t bytes = sizeof(int)*nelements;
 
-
   std::vector<int> input;
+
+//-- Here are the parameters in the call to the kernel
+//--   void vadd(const uint512_dt *sginoutt,
+//--             const uint512_dt *sgoutd,
+//--             const uint512_dt *in,
+//--             uint512_dt *outd,
+//--             uint512_dt *outt,
+//--             int size     // Size is usually 1024          
+//--             ) {
 
   job_type(cl_context c, cl_command_queue q, cl_program p, std::string kname, const int nelements)
     : context(c), queue(q), program(p), kernel_name(kname), nelements(nelements)
   {
-
-    input.reserve(nelements);
-    std::iota(input.begin(),input.end(),0);
+    throw_if_error((nelements!=4),"For now, must construct job with nelements=4");
 
     cl_int err=CL_SUCCESS;
     krnl = clCreateKernel(program,kernel_name.c_str(),&err);
@@ -99,28 +118,46 @@ struct job_type
     host_buffer_ext.obj = NULL;
     host_buffer_ext.param = 0;
 
-    in1 = clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_EXT_PTR_XILINX,bytes,&host_buffer_ext,&err);
-    in2 = clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_EXT_PTR_XILINX,bytes,&host_buffer_ext,&err);
-    io = clCreateBuffer(context,CL_MEM_WRITE_ONLY|CL_MEM_EXT_PTR_XILINX,bytes,&host_buffer_ext,&err);
+    // Kernel parameters are:  void vadd(...)
+    //    const uint512_dt *sginoutt,
+    //    const uint512_dt *sgoutd,
+    //    const uint512_dt *in,
+    //    uint512_dt *outd,
+    //    uint512_dt *outt,
+    //    int size   
 
-    clSetKernelArg(krnl,2,sizeof(cl_mem),&io);
-    clSetKernelArg(krnl,0,sizeof(cl_mem),&in1);
-    clSetKernelArg(krnl,1,sizeof(cl_mem),&in2);
-    clSetKernelArg(krnl,3,sizeof(decltype(nelements)),&nelements);
+    sginoutt = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_EXT_PTR_XILINX,bytes_sginoutt,&host_buffer_ext,&err);
+    sgoutd   = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_EXT_PTR_XILINX,bytes_sgoutd,  &host_buffer_ext,&err);
+    in       = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_EXT_PTR_XILINX,bytes_in,      &host_buffer_ext,&err);
+    outd     = clCreateBuffer(context,CL_MEM_WRITE_ONLY|CL_MEM_EXT_PTR_XILINX,bytes_outd,    &host_buffer_ext,&err);
+    outt     = clCreateBuffer(context,CL_MEM_WRITE_ONLY|CL_MEM_EXT_PTR_XILINX,bytes_outt,    &host_buffer_ext,&err);
 
-    in1_mapped = (int*) clEnqueueMapBuffer(queue,in1,true,CL_MAP_WRITE,0,bytes,0,nullptr,nullptr,&err);
-    in2_mapped = (int*) clEnqueueMapBuffer(queue,in2,true,CL_MAP_WRITE,0,bytes,0,nullptr,nullptr,&err);
-    io_mapped = (int*) clEnqueueMapBuffer(queue,io,true,CL_MAP_READ,0,bytes,0,nullptr,nullptr,&err);
+    // krnl=handle, 2nd=arg no in kernel(start at 0), 3rd=size, 4th=value(pointer) 
+    clSetKernelArg(krnl,0,sizeof(cl_mem),&sginoutt);
+    clSetKernelArg(krnl,1,sizeof(cl_mem),&sgoutd);
+    clSetKernelArg(krnl,2,sizeof(cl_mem),&in);
+    clSetKernelArg(krnl,3,sizeof(cl_mem),&outd);
+    clSetKernelArg(krnl,4,sizeof(cl_mem),&outt);
+    clSetKernelArg(krnl,5,sizeof(decltype(nelements)),&nelements);  // size
+
+    sginoutt_mapped = (int*) clEnqueueMapBuffer(queue,sginoutt,true,CL_MAP_WRITE,0,bytes_sginoutt,0,nullptr,nullptr,&err);
+    sgoutd_mapped   = (int*) clEnqueueMapBuffer(queue,sgoutd,  true,CL_MAP_WRITE,0,bytes_sgoutd,  0,nullptr,nullptr,&err);
+    in_mapped       = (int*) clEnqueueMapBuffer(queue,in,      true,CL_MAP_WRITE,0,bytes_in,      0,nullptr,nullptr,&err);
+    outd_mapped     = (int*) clEnqueueMapBuffer(queue,outd,    true,CL_MAP_READ, 0,bytes_outd,    0,nullptr,nullptr,&err);
+    outt_mapped     = (int*) clEnqueueMapBuffer(queue,outt,    true,CL_MAP_READ, 0,bytes_outt,    0,nullptr,nullptr,&err);
     clFinish(queue);
 
-    std::memcpy(in1_mapped,input.data(),bytes);
-    std::memcpy(in2_mapped,input.data(),bytes);
+    memset(sginoutt_mapped,0,bytes_sginoutt);
+    memset(sgoutd_mapped,  0,bytes_sgoutd);
+    memset(in_mapped,      0,bytes_in);
+    memset(outd_mapped,    0,bytes_outd);
+    memset(outt_mapped,    0,bytes_outt);
 
-    cl_mem mems[2] = {in1,in2};
+    cl_mem memsi[3] = {sginoutt,sgoutd,in};
+    cl_mem memso[2] = {outd,outt};
 
-
-    clEnqueueMigrateMemObjects(queue,2,mems,0,0,nullptr,nullptr);
-    clEnqueueMigrateMemObjects(queue,1,&io,0,0,nullptr,nullptr);
+    clEnqueueMigrateMemObjects(queue,3,memsi,0,0,nullptr,nullptr);
+    clEnqueueMigrateMemObjects(queue,2,memso,0,0,nullptr,nullptr);
     clFinish(queue);
   }
 
@@ -128,21 +165,32 @@ struct job_type
   {
     clReleaseKernel(krnl); 
     cl_event release_event;
-    clEnqueueUnmapMemObject(queue,in1,in1_mapped,0,nullptr,&release_event);
+
+    clEnqueueUnmapMemObject(queue,sginoutt,sginoutt_mapped,0,nullptr,&release_event);
     clWaitForEvents(1,&release_event);
     clReleaseEvent(release_event);
 
-    clEnqueueUnmapMemObject(queue,in2,in2_mapped,0,nullptr,&release_event);
+    clEnqueueUnmapMemObject(queue,sgoutd,  sgoutd_mapped,  0,nullptr,&release_event);
     clWaitForEvents(1,&release_event);
     clReleaseEvent(release_event);
 
-    clEnqueueUnmapMemObject(queue,io,io_mapped,0,nullptr,&release_event);
+    clEnqueueUnmapMemObject(queue,in,      in_mapped,      0,nullptr,&release_event);
+    clWaitForEvents(1,&release_event);  // 2ndArg=list of events to wait, 1stArg=number in list in 2nd arg
+    clReleaseEvent(release_event);
+
+    clEnqueueUnmapMemObject(queue,outd,    outd_mapped,    0,nullptr,&release_event);
     clWaitForEvents(1,&release_event);
     clReleaseEvent(release_event);
 
-    clReleaseMemObject(in1);
-    clReleaseMemObject(in2);
-    clReleaseMemObject(io);
+    clEnqueueUnmapMemObject(queue,outt,    outt_mapped,    0,nullptr,&release_event);
+    clWaitForEvents(1,&release_event);
+    clReleaseEvent(release_event);
+
+    clReleaseMemObject(sginoutt);
+    clReleaseMemObject(sgoutd);
+    clReleaseMemObject(in);
+    clReleaseMemObject(outd);
+    clReleaseMemObject(outt);
   }
 
   void
@@ -158,18 +206,21 @@ struct job_type
     ++runs;
 
     cl_int err = CL_SUCCESS;
-    cl_event events[3]={nullptr};
+    cl_event events[3]={nullptr};  // I think this is never used and can be removed?
+
+    cl_mem memsi[3] = {sginoutt,sgoutd,in};
+    cl_mem memso[2] = {outd,outt};
 
     cl_event write_event;
     cl_event ev_kernel_done;
     cl_event read_done;
    
-    cl_mem mems[2] = {in1,in2};
-    clEnqueueMigrateMemObjects(queue,2,mems,0,0,nullptr,&write_event);
+    clEnqueueMigrateMemObjects(queue,3,memsi,0,0,nullptr,&write_event);
 
     clEnqueueTask(queue,krnl,1,&write_event,&ev_kernel_done);
 
-    clEnqueueMigrateMemObjects(queue,1,&io,CL_MIGRATE_MEM_OBJECT_HOST,1,&ev_kernel_done,&read_done);
+    // 1st=queuehandle,2nd=objectListSize,3rd=objectList,4th=flags,5th=inEventListSize,6th=inEventList,7th=EventWhenComplete
+    clEnqueueMigrateMemObjects(queue,2,memso,CL_MIGRATE_MEM_OBJECT_HOST,1,&ev_kernel_done,&read_done);
 
     clSetEventCallback(read_done,CL_COMPLETE,&kernel_done,this);
 
@@ -182,17 +233,17 @@ struct job_type
   {
     std::vector<int> result(nelements);
 
-    for (size_t idx=0; idx<nelements; ++idx) {
-      if (io_mapped[idx] != in1_mapped[idx] + in2_mapped[idx]) {
-        std::cout << "got result[" << idx << "] = " << io_mapped[idx] << " expected " << in1_mapped[idx]+in2_mapped[idx] << "\n";
-        throw std::runtime_error("VERIFY FAILED");
-      }
-    } 
+    //for (size_t idx=0; idx<nelements; ++idx) {
+    //  if (io_mapped[idx] != in1_mapped[idx] + in2_mapped[idx]) {
+    //    std::cout << "got result[" << idx << "] = " << io_mapped[idx] << " expected " << in1_mapped[idx]+in2_mapped[idx] << "\n";
+    //    throw std::runtime_error("VERIFY FAILED");
+    //  }
+    //} 
   }
 
 };
 
-static void
+static void     // Callback
 kernel_done(cl_event event, cl_int status, void* data)
 {
   clReleaseEvent(event);
@@ -202,7 +253,7 @@ kernel_done(cl_event event, cl_int status, void* data)
 int
 run_test(cl_context context, cl_command_queue queue, cl_program program, const int nelements)
 {
-  int ncu = 14;
+  int ncu = 14;  // Numbr of compute units - must match the number in the src/link_hm.cfg file 
   std::vector<job_type> jobs;
   jobs.reserve(ncu);
   for (size_t j=0; j<ncu; ++j)
@@ -219,16 +270,15 @@ run_test(cl_context context, cl_command_queue queue, cl_program program, const i
   auto total_kernel_execution =0;
   for (size_t j=0; j<ncu; ++j) {
     std::cout << "kernel[" << j << "]:" << jobs[j].runs << "\n";
-    total_kernel_execution+=jobs[j].runs;
+    total_kernel_execution += jobs[j].runs;
   }
 
-   std::cout<<"Total Kernel execution in 20 seconds:"<<total_kernel_execution<<"\n";
-   std::cout<<"\n Data processed in 20 seconds: 4MB*total_kernel_executions:"<<total_kernel_execution*4<<" MB \n";
-   double total_data_mb = (double)(total_kernel_execution*4); 
-   double total_data_mb_sec = (double)(total_data_mb/20); 
-   double total_data_gb_sec = (double)(total_data_mb_sec/1000); 
-   std::cout<<"\n Data processed/sec (GBPs)= "<<total_data_gb_sec<<" GBPs \n";
-
+  std::cout<<"Total Kernel execution in 20 seconds:"<<total_kernel_execution<<"\n";
+  std::cout<<"\n Data processed in 20 seconds: 4*256*7168*total_kernel_executions:"<<total_kernel_execution*7<<" MB \n";
+  double total_data_mb = (double)(total_kernel_execution*7); 
+  double total_data_mb_sec = (double)(total_data_mb/20); 
+  double total_data_gb_sec = (double)(total_data_mb_sec/1000); 
+  std::cout<<"\n Data processed/sec (GBPs)= "<<total_data_gb_sec<<" GBPs \n";
 
   return 0;
 }
@@ -269,7 +319,7 @@ run(int argc, char** argv)
   throw_if_error(err,"failed to create program");
 
   
-  int number_of_elements = 1024*512;
+  int number_of_elements = 4;       // 1024*512;
 
   double dmbytes = (number_of_elements*sizeof(int))/(((double)1024) * ((double)1024));
   std::cout<<"\n Buffer Inputs "<<dmbytes<<" MB \n";

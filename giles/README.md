@@ -44,8 +44,8 @@ TODO: Give examples of the performance.
 1405  source /media/disk1/tools/Xilinx/Vitis/2022.1/settings64.sh
 1406  source /opt/xilinx/xrt/setup.sh
 1407  export PLATFORM_REPO_PATHS=/opt/xilinx/platforms
-
-
+1408  sudo /opt/xilinx/xrt/bin/xbutil configure --device 0000:4d:00.1 --host-mem enable --size 1G
+1409  lspci -d 10ee:     (if 4d:00.1 is the wrong one)
 1408  ./host.exe vadd.hw.run2.xclbin
 Would be nice on the next line to type make host_hm.exe I will try to fix it
 1410  make host.exe lab=run2
