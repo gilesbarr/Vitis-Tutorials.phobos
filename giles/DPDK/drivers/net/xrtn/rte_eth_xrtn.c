@@ -17,18 +17,17 @@
 #define NKERN 14
 #define XRTN_MAX_QUEUE_PER_PORT (NKERN*3)
 
-#define MAX_KNI_PORTS 8
+// #define MAX_KNI_PORTS 8
 
+// --- KNI_ETHER_MTU not used, but need something like this I think
 #define KNI_ETHER_MTU(mbuf_size)       \
 	((mbuf_size) - RTE_ETHER_HDR_LEN) /**< Ethernet MTU. */
 
-#define ETH_KNI_NO_REQUEST_THREAD_ARG	"no_request_thread"
+#define ETH_XRTN_NO_REQUEST_THREAD_ARG	"no_request_thread"
 static const char * const valid_arguments[] = {
-	ETH_KNI_NO_REQUEST_THREAD_ARG,
+	ETH_XRTN_NO_REQUEST_THREAD_ARG,
 	NULL
 };
-
-#define NKERN 14
 
 // This driver originated as a copy of /drivers/net/kni driver from DPDK 21.11LTS.  
 // Each port corresponds to one U50 card.   Each U50 card contains NKERN VITIS processing kernels.
@@ -67,7 +66,7 @@ static const char * const valid_arguments[] = {
 // various places, run() and prepare_descriptors().  The run() routine is similar to in host_hm.
 //
 
-struct eth_kni_args {
+struct eth_xrtn_args {
 	int no_request_thread;
 };
 
@@ -85,9 +84,9 @@ struct pmd_queue {
 };
 
 struct pmd_internals {
-	struct rte_xrta *xrta;
+	struct rte_xrtn *xrtn;
 	uint16_t port_id;
-	int is_xrta_started;
+	int is_xrtn_started;
 
 	pthread_t thread;
 	int stop_thread;
@@ -95,8 +94,8 @@ struct pmd_internals {
 
 	struct rte_ether_addr eth_addr;
 
-	struct pmd_queue rx_queues[XRTA_MAX_QUEUE_PER_PORT];
-	struct pmd_queue tx_queues[XRTA_MAX_QUEUE_PER_PORT];
+	struct pmd_queue rx_queues[XRTN_MAX_QUEUE_PER_PORT];
+	struct pmd_queue tx_queues[XRTN_MAX_QUEUE_PER_PORT];
 };
 
 static const struct rte_eth_link pmd_link = {
@@ -105,9 +104,10 @@ static const struct rte_eth_link pmd_link = {
 		.link_status = RTE_ETH_LINK_DOWN,
 		.link_autoneg = RTE_ETH_LINK_FIXED,
 };
-static int is_kni_initialized;
 
-RTE_LOG_REGISTER_DEFAULT(eth_xrta_logtype, NOTICE);
+static int is_xrtn_initialized;   // Gets incremented and decremented in different threads
+
+RTE_LOG_REGISTER_DEFAULT(eth_xrtn_logtype, NOTICE);
 
 #define PMD_LOG(level, fmt, args...) \
 	rte_log(RTE_LOG_ ## level, eth_xrta_logtype, \
@@ -117,13 +117,17 @@ static uint16_t
 eth_kni_rx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 {
 	struct pmd_queue *kni_q = q;
-	struct rte_xrta *kni = kni_q->internals->xrta;
+	// struct rte_xrta *kni = kni_q->internals->xrta;
 	uint16_t nb_pkts=0;
-	int i;
+	// int i;
 
-	//gb nb_pkts = rte_kni_rx_burst(kni, bufs, nb_bufs);
-	for (i = 0; i < nb_pkts; i++)
-		bufs[i]->port = kni_q->internals->port_id;
+        // Copied from null
+        if ((q == NULL) || (bufs == NULL))
+                return 0;
+
+	// nb_pkts = rte_kni_rx_burst(kni, bufs, nb_bufs);
+	// for (i = 0; i < nb_pkts; i++)
+	//	bufs[i]->port = kni_q->internals->port_id;
 
 	kni_q->rx.pkts += nb_pkts;
 
@@ -136,14 +140,26 @@ eth_kni_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	struct pmd_queue *kni_q = q;
 	struct rte_xrta *kni = kni_q->internals->xrta;
 	uint16_t nb_pkts;
+        int i;
 
 	//gb nb_pkts =  rte_kni_tx_burst(kni, bufs, nb_bufs);
+
+	// Copied from null
+        if ((q == NULL) || (bufs == NULL))
+                return 0;
+
+	// Copied from null
+        for (i = 0; i < nb_bufs; i++)
+                rte_pktmbuf_free(bufs[i]);
+
+        // Useful copied from null:  rte_atomic64_add(&(h->tx_pkts), i);
 
 	kni_q->tx.pkts += nb_pkts;
 
 	return nb_pkts;
 }
 
+#if 0
 static void *
 kni_handle_request(void *param)
 {
@@ -185,55 +201,41 @@ eth_kni_start(struct rte_eth_dev *dev)
 
 	return 0;
 }
+#endif
 
+// dev_ops: dev_start
 static int
-eth_kni_dev_start(struct rte_eth_dev *dev)
+eth_xrtn_dev_start(struct rte_eth_dev *dev)
 {
 	struct pmd_internals *internals = dev->data->dev_private;
-	int ret;
+	int ret = 0;
 
 	if (internals->is_xrta_started == 0) {
-		ret = eth_kni_start(dev);
 		if (ret)
 			return -1;
 		internals->is_xrta_started = 1;
 	}
 
-	if (internals->no_request_thread == 0) {
-		internals->stop_thread = 0;
-
-		ret = rte_ctrl_thread_create(&internals->thread,
-			"kni_handle_req", NULL,
-			kni_handle_request, internals);
-		if (ret) {
-			PMD_LOG(ERR,
-				"Fail to create kni request thread");
-			return -1;
-		}
-	}
+        // --- kni at this point started a thread, just above, in the if statement, it
+	// --- called eth_kni_start() which is just above which also set up the 
+	// --- communication with the kni part of DPDK.
 
 	dev->data->dev_link.link_status = 1;
 
 	return 0;
 }
 
+// I think dev_stop gets called on PRIMARY and SECONDARY but dev_close only on PRIMARY 
+
+// dev_ops: dev_stop
 static int
-eth_kni_dev_stop(struct rte_eth_dev *dev)
+eth_xrtn_dev_stop(struct rte_eth_dev *dev)
 {
-	struct pmd_internals *internals = dev->data->dev_private;
-	int ret;
+	// struct pmd_internals *internals = dev->data->dev_private;
+	// int ret;
 
-	if (internals->no_request_thread == 0 && internals->stop_thread == 0) {
-		internals->stop_thread = 1;
-
-		ret = pthread_cancel(internals->thread);
-		if (ret)
-			PMD_LOG(ERR, "Can't cancel the thread");
-
-		ret = pthread_join(internals->thread, NULL);
-		if (ret)
-			PMD_LOG(ERR, "Can't join the thread");
-	}
+        // --- kni at this point stopped a thread that talks with the kernel
+	// --- and adjusted some variables in the intrnals area
 
 	dev->data->dev_link.link_status = 0;
 	dev->data->dev_started = 0;
@@ -241,53 +243,54 @@ eth_kni_dev_stop(struct rte_eth_dev *dev)
 	return 0;
 }
 
+// dev_ops: dev_close
 static int
-eth_kni_close(struct rte_eth_dev *eth_dev)
+eth_xrtn_close(struct rte_eth_dev *eth_dev)
 {
-	struct pmd_internals *internals;
-	int ret;
+	// struct pmd_internals *internals = eth_dev->data->dev_private;
+	int ret = 0;
 
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
 		return 0;
 
-	ret = eth_kni_dev_stop(eth_dev);
+	ret = eth_xrtn_dev_stop(eth_dev);
 	if (ret)
-		PMD_LOG(WARNING, "Not able to stop kni for %s",
+		PMD_LOG(WARNING, "Not able to stop xrtn for %s",
 			eth_dev->data->name);
 
 	/* mac_addrs must not be freed alone because part of dev_private */
 	eth_dev->data->mac_addrs = NULL;
 
-	internals = eth_dev->data->dev_private;
-	ret = rte_kni_release(internals->xrta);
-	if (ret)
-		PMD_LOG(WARNING, "Not able to release kni for %s",
-			eth_dev->data->name);
+	// --- kni at this point did something towards the linux network stack.
+	// --- ret = rte_kni_release(internals->xrta);
 
 	return ret;
 }
 
+// dev_ops: dev_configure
 static int
-eth_kni_dev_configure(struct rte_eth_dev *dev __rte_unused)
+eth_xrtn_dev_configure(struct rte_eth_dev *dev __rte_unused)
 {
 	return 0;
 }
 
+// dev_ops: dev_infos_get
 static int
-eth_kni_dev_info(struct rte_eth_dev *dev __rte_unused,
+eth_xrtn_dev_info(struct rte_eth_dev *dev __rte_unused,
 		struct rte_eth_dev_info *dev_info)
 {
 	dev_info->max_mac_addrs = 1;
 	dev_info->max_rx_pktlen = UINT32_MAX;
-	dev_info->max_rx_queues = KNI_MAX_QUEUE_PER_PORT;
-	dev_info->max_tx_queues = KNI_MAX_QUEUE_PER_PORT;
+	dev_info->max_rx_queues = XRTN_MAX_QUEUE_PER_PORT;
+	dev_info->max_tx_queues = XRTN_MAX_QUEUE_PER_PORT;
 	dev_info->min_rx_bufsize = 0;
 
 	return 0;
 }
 
+// dev_ops: rx_queue_setup
 static int
-eth_kni_rx_queue_setup(struct rte_eth_dev *dev,
+eth_xrtn_rx_queue_setup(struct rte_eth_dev *dev,
 		uint16_t rx_queue_id,
 		uint16_t nb_rx_desc __rte_unused,
 		unsigned int socket_id __rte_unused,
@@ -306,8 +309,9 @@ eth_kni_rx_queue_setup(struct rte_eth_dev *dev,
 	return 0;
 }
 
+// dev_ops: tx_queue_setup
 static int
-eth_kni_tx_queue_setup(struct rte_eth_dev *dev,
+eth_xrtn_tx_queue_setup(struct rte_eth_dev *dev,
 		uint16_t tx_queue_id,
 		uint16_t nb_tx_desc __rte_unused,
 		unsigned int socket_id __rte_unused,
@@ -324,15 +328,17 @@ eth_kni_tx_queue_setup(struct rte_eth_dev *dev,
 	return 0;
 }
 
+// dev_ops: link_update
 static int
-eth_kni_link_update(struct rte_eth_dev *dev __rte_unused,
+eth_xrtn_link_update(struct rte_eth_dev *dev __rte_unused,
 		int wait_to_complete __rte_unused)
 {
 	return 0;
 }
 
+// dev_ops: stats_get
 static int
-eth_xrta_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
+eth_xrtn_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
 {
 	unsigned long rx_packets_total = 0, rx_bytes_total = 0;
 	unsigned long tx_packets_total = 0, tx_bytes_total = 0;
@@ -368,8 +374,9 @@ eth_xrta_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
 	return 0;
 }
 
+// dev_ops: stats_reset
 static int
-eth_xrta_stats_reset(struct rte_eth_dev *dev)
+eth_xrtn_stats_reset(struct rte_eth_dev *dev)
 {
 	struct rte_eth_dev_data *data = dev->data;
 	struct pmd_queue *q;
@@ -390,28 +397,29 @@ eth_xrta_stats_reset(struct rte_eth_dev *dev)
 }
 
 static const struct eth_dev_ops eth_kni_ops = {
-	.dev_start      = eth_kni_dev_start,
-	.dev_stop       = eth_kni_dev_stop,
-	.dev_close      = eth_kni_close,
-	.dev_configure  = eth_kni_dev_configure,
-	.dev_infos_get  = eth_kni_dev_info,
-	.rx_queue_setup = eth_kni_rx_queue_setup,
-	.tx_queue_setup = eth_kni_tx_queue_setup,
-	.link_update    = eth_kni_link_update,
-	.stats_get      = eth_xrta_stats_get,
-	.stats_reset    = eth_xrta_stats_reset,
+	.dev_start      = eth_xrtn_dev_start,
+	.dev_stop       = eth_xrtn_dev_stop,
+	.dev_close      = eth_xrtn_close,             // dev_close calls dev_stop
+	.dev_configure  = eth_xrtn_dev_configure,
+	.dev_infos_get  = eth_xrtn_dev_info,
+	.rx_queue_setup = eth_xrtn_rx_queue_setup,
+	.tx_queue_setup = eth_xrtn_tx_queue_setup,
+	.link_update    = eth_xrtn_link_update,
+	.stats_get      = eth_xrtn_stats_get,
+	.stats_reset    = eth_xrtn_stats_reset,
 };
 
+// Called from probe()
 static struct rte_eth_dev *
-eth_kni_create(struct rte_vdev_device *vdev,
-		struct eth_kni_args *args,
+eth_xrtn_create(struct rte_vdev_device *vdev,
+		struct eth_xrtn_args *args,
 		unsigned int numa_node)
 {
 	struct pmd_internals *internals;
 	struct rte_eth_dev_data *data;
 	struct rte_eth_dev *eth_dev;
 
-	PMD_LOG(INFO, "Creating kni ethdev on numa socket %u",
+	PMD_LOG(INFO, "Creating xrtn ethdev on numa socket %u",
 			numa_node);
 
 	/* reserve an ethdev entry */
@@ -422,8 +430,8 @@ eth_kni_create(struct rte_vdev_device *vdev,
 	internals = eth_dev->data->dev_private;
 	internals->port_id = eth_dev->data->port_id;
 	data = eth_dev->data;
-	data->nb_rx_queues = 1;
-	data->nb_tx_queues = 1;
+	data->nb_rx_queues = XRTN_MAX_QUEUE_PER_PORT;
+	data->nb_tx_queues = XRTN_MAX_QUEUE_PER_PORT;
 	data->dev_link = pmd_link;
 	data->mac_addrs = &internals->eth_addr;
 	data->promiscuous = 1;
@@ -432,31 +440,33 @@ eth_kni_create(struct rte_vdev_device *vdev,
 
 	rte_eth_random_addr(internals->eth_addr.addr_bytes);
 
-	eth_dev->dev_ops = &eth_kni_ops;
+	eth_dev->dev_ops = &eth_xrtn_ops;
 
 	internals->no_request_thread = args->no_request_thread;
 
 	return eth_dev;
 }
 
+// Called from probe()
 static int
 kni_init(void)
 {
 	int ret;
 
-	if (is_kni_initialized == 0) {
-		ret = rte_kni_init(MAX_KNI_PORTS);
+	if (is_xrtn_initialized == 0) {
+		// ret = rte_kni_init(MAX_KNI_PORTS);
 		if (ret < 0)
 			return ret;
 	}
 
-	is_kni_initialized++;
+	is_xrtn_initialized++;
 
 	return 0;
 }
 
+// Called from probe()
 static int
-eth_kni_kvargs_process(struct eth_kni_args *args, const char *params)
+eth_kni_kvargs_process(struct eth_xrtn_args *args, const char *params)
 {
 	struct rte_kvargs *kvlist;
 
@@ -464,9 +474,9 @@ eth_kni_kvargs_process(struct eth_kni_args *args, const char *params)
 	if (kvlist == NULL)
 		return -1;
 
-	memset(args, 0, sizeof(struct eth_kni_args));
+	memset(args, 0, sizeof(struct eth_xrtn_args));
 
-	if (rte_kvargs_count(kvlist, ETH_KNI_NO_REQUEST_THREAD_ARG) == 1)
+	if (rte_kvargs_count(kvlist, ETH_XRTN_NO_REQUEST_THREAD_ARG) == 1)
 		args->no_request_thread = 1;
 
 	rte_kvargs_free(kvlist);
@@ -474,11 +484,12 @@ eth_kni_kvargs_process(struct eth_kni_args *args, const char *params)
 	return 0;
 }
 
+// rte_vdev_driver: probe
 static int
-eth_kni_probe(struct rte_vdev_device *vdev)
+eth_xrtn_probe(struct rte_vdev_device *vdev)
 {
 	struct rte_eth_dev *eth_dev;
-	struct eth_kni_args args;
+	struct eth_xrtn_args args;
 	const char *name;
 	const char *params;
 	int ret;
@@ -494,39 +505,43 @@ eth_kni_probe(struct rte_vdev_device *vdev)
 			return -1;
 		}
 		/* TODO: request info from primary to set up Rx and Tx */
-		eth_dev->dev_ops = &eth_kni_ops;
+		eth_dev->dev_ops = &eth_xrtn_ops;
 		eth_dev->device = &vdev->device;
 		rte_eth_dev_probing_finish(eth_dev);
 		return 0;
 	}
 
-	ret = eth_kni_kvargs_process(&args, params);
+	// Function defined just above
+	ret = eth_xrtn_kvargs_process(&args, params);
 	if (ret < 0)
 		return ret;
 
-	ret = kni_init();
+        // Function defined just above
+	ret = xrtn_init();
 	if (ret < 0)
 		return ret;
 
-	eth_dev = eth_kni_create(vdev, &args, rte_socket_id());
+	// Function defined just above
+	eth_dev = eth_xrtn_create(vdev, &args, rte_socket_id());
 	if (eth_dev == NULL)
-		goto kni_uninit;
+		goto xrtn_uninit;
 
-	eth_dev->rx_pkt_burst = eth_kni_rx;
-	eth_dev->tx_pkt_burst = eth_kni_tx;
+	eth_dev->rx_pkt_burst = eth_xrtn_rx;    // Post the pointers to the rx and tx functions
+	eth_dev->tx_pkt_burst = eth_xrtn_tx;
 
 	rte_eth_dev_probing_finish(eth_dev);
 	return 0;
 
-kni_uninit:
-	is_kni_initialized--;
-	if (is_kni_initialized == 0)
+xrtn_uninit:
+	is_xrtn_initialized--;
+	if (is_xrtn_initialized == 0)
 		rte_kni_close();
 	return -1;
 }
 
+// rte_vdev_driver: remove
 static int
-eth_kni_remove(struct rte_vdev_device *vdev)
+eth_xrtn_remove(struct rte_vdev_device *vdev)
 {
 	struct rte_eth_dev *eth_dev;
 	const char *name;
@@ -539,26 +554,26 @@ eth_kni_remove(struct rte_vdev_device *vdev)
 	eth_dev = rte_eth_dev_allocated(name);
 	if (eth_dev != NULL) {
 		if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
-			ret = eth_kni_dev_stop(eth_dev);
+			ret = eth_xrtn_dev_stop(eth_dev);
 			if (ret != 0)
 				return ret;
 			return rte_eth_dev_release_port(eth_dev);
 		}
-		eth_kni_close(eth_dev);
+		eth_xrtn_close(eth_dev);
 		rte_eth_dev_release_port(eth_dev);
 	}
 
-	is_kni_initialized--;
-	if (is_kni_initialized == 0)
+	is_xrtn_initialized--;
+	if (is_xrtn_initialized == 0)
 		rte_kni_close();
 
 	return 0;
 }
 
-static struct rte_vdev_driver eth_xrta_drv = {
-	.probe = eth_kni_probe,
-	.remove = eth_kni_remove,
+static struct rte_vdev_driver eth_xrtn_drv = {
+	.probe = eth_xrtn_probe,
+	.remove = eth_xrtn_remove,
 };
 
-RTE_PMD_REGISTER_VDEV(net_xrta, eth_xrta_drv);
-RTE_PMD_REGISTER_PARAM_STRING(net_xrta, ETH_KNI_NO_REQUEST_THREAD_ARG "=<int>");
+RTE_PMD_REGISTER_VDEV(net_xrtn, eth_xrtn_drv);
+RTE_PMD_REGISTER_PARAM_STRING(net_xrtn, ETH_XRTN_NO_REQUEST_THREAD_ARG "=<int>");
