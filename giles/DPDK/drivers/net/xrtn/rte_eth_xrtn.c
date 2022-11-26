@@ -110,11 +110,11 @@ static int is_xrtn_initialized;   // Gets incremented and decremented in differe
 RTE_LOG_REGISTER_DEFAULT(eth_xrtn_logtype, NOTICE);
 
 #define PMD_LOG(level, fmt, args...) \
-	rte_log(RTE_LOG_ ## level, eth_xrta_logtype, \
+	rte_log(RTE_LOG_ ## level, eth_xrtn_logtype, \
 		"%s(): " fmt "\n", __func__, ##args)
 
 static uint16_t
-eth_kni_rx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
+eth_xrtn_rx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 {
 	struct pmd_queue *kni_q = q;
 	// struct rte_xrta *kni = kni_q->internals->xrta;
@@ -122,7 +122,7 @@ eth_kni_rx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	// int i;
 
         // Copied from null
-        if ((q == NULL) || (bufs == NULL))
+        if ((q == NULL) || (bufs == NULL) || (nb_bufs == 0))
                 return 0;
 
 	// nb_pkts = rte_kni_rx_burst(kni, bufs, nb_bufs);
@@ -135,11 +135,11 @@ eth_kni_rx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 }
 
 static uint16_t
-eth_kni_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
+eth_xrtn_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 {
 	struct pmd_queue *kni_q = q;
-	struct rte_xrta *kni = kni_q->internals->xrta;
-	uint16_t nb_pkts;
+	// struct rte_xrtn *kni = kni_q->internals->xrtn;
+	uint16_t nb_pkts = 0;
         int i;
 
 	//gb nb_pkts =  rte_kni_tx_burst(kni, bufs, nb_bufs);
@@ -210,10 +210,10 @@ eth_xrtn_dev_start(struct rte_eth_dev *dev)
 	struct pmd_internals *internals = dev->data->dev_private;
 	int ret = 0;
 
-	if (internals->is_xrta_started == 0) {
+	if (internals->is_xrtn_started == 0) {
 		if (ret)
 			return -1;
-		internals->is_xrta_started = 1;
+		internals->is_xrtn_started = 1;
 	}
 
         // --- kni at this point started a thread, just above, in the if statement, it
@@ -396,7 +396,7 @@ eth_xrtn_stats_reset(struct rte_eth_dev *dev)
 	return 0;
 }
 
-static const struct eth_dev_ops eth_kni_ops = {
+static const struct eth_dev_ops eth_xrtn_ops = {
 	.dev_start      = eth_xrtn_dev_start,
 	.dev_stop       = eth_xrtn_dev_stop,
 	.dev_close      = eth_xrtn_close,             // dev_close calls dev_stop
@@ -449,9 +449,9 @@ eth_xrtn_create(struct rte_vdev_device *vdev,
 
 // Called from probe()
 static int
-kni_init(void)
+xrtn_init(void)
 {
-	int ret;
+	int ret = 0;
 
 	if (is_xrtn_initialized == 0) {
 		// ret = rte_kni_init(MAX_KNI_PORTS);
@@ -466,7 +466,7 @@ kni_init(void)
 
 // Called from probe()
 static int
-eth_kni_kvargs_process(struct eth_xrtn_args *args, const char *params)
+eth_xrtn_kvargs_process(struct eth_xrtn_args *args, const char *params)
 {
 	struct rte_kvargs *kvlist;
 
@@ -534,8 +534,9 @@ eth_xrtn_probe(struct rte_vdev_device *vdev)
 
 xrtn_uninit:
 	is_xrtn_initialized--;
-	if (is_xrtn_initialized == 0)
-		rte_kni_close();
+	if (is_xrtn_initialized == 0) {
+		// rte_kni_close();
+	}
 	return -1;
 }
 
@@ -564,8 +565,9 @@ eth_xrtn_remove(struct rte_vdev_device *vdev)
 	}
 
 	is_xrtn_initialized--;
-	if (is_xrtn_initialized == 0)
-		rte_kni_close();
+	if (is_xrtn_initialized == 0) {
+		// rte_kni_close();
+	}
 
 	return 0;
 }
